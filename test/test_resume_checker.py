@@ -7,4 +7,3 @@ def test_fib() -> None:
     assert fib(2) == 1
     assert fib(3) == 2
     assert fib(4) == 3
-    assert fib(5) == 5
