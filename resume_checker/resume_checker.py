@@ -73,6 +73,7 @@ def _tokenize(sentences):
             word = word_information.text
             if pronoun := _is_pronoun(word_information.pos_, word):
                 pronouns.append(pronoun)
+
         print(pronouns)
 
 
