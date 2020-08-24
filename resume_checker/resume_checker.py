@@ -38,7 +38,7 @@ def _convert_pdf_to_string_and_get_urls_from(file_path):
         for page in PDFPage.create_pages(doc):
             if page.annots:
                 for annotation in page.annots:
-                    if link_data := annotation.resolve().get("A"):  # fmt: off
+                    if link_data := annotation.resolve().get("A"):
                         if uri := link_data.get("URI"):
                             external_links.append(uri.decode("utf-8"))
             interpreter.process_page(page)
