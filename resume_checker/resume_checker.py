@@ -1,39 +1,83 @@
-from enum import Enum
-from io import StringIO
+import re
+from enum import Enum, auto
 
 import spacy
-from pdfminer.converter import TextConverter
-from pdfminer.layout import LAParams
+from pdfminer.converter import PDFPageAggregator
+from pdfminer.layout import LAParams, LTTextBox
 from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
 
+class IgnoredPronouns(Enum):
+    IT = auto()
+
+
 class TypeWords(Enum):
-    PRONOUN = "PRON"
+    PRON = auto()
 
 
-class IgnoredPronoun(Enum):
-    IT = "it"
+class Metrics(Enum):
+    PERCENT = auto()
+    MONEY = auto()
+    ORDINAL = auto()
+    CARDINAL = auto()
+
+
+class MetricSectionsStem(Enum):
+    WORK = {
+        "work",
+        "experi",
+    }
+    EDUCATION = {
+        "research",
+        "project",
+    }
+    PERSONAL = {
+        "leader",
+        "award",
+        "volunt",
+    }
+
+
+class IgnoredMetricSectionsStem(Enum):
+    EDUCATION = {
+        "educ",
+        "cours",
+        "certif",
+        "languag",
+    }
+    PERSONAL = {
+        "skill",
+        "techno",
+        "about",
+        "hobbi",
+        "event",
+        "hackaton",
+        "interest",
+        "activities",
+    }
+    EXTRA = {
+        "other",
+    }
 
 
 def create_report_of(filepath):
 
-    resume_as_lines, links = _convert_pdf_to_string_and_get_urls_from(filepath)
-    resume_as_array = _split_and_clean_string(resume_as_lines)
-    _tokenize(resume_as_array)
+    _sorted_resume, links = _convert_pdf_to_string_and_get_urls_from(filepath)
+    _tokenize(_sorted_resume)
 
 
 def _convert_pdf_to_string_and_get_urls_from(file_path):
-    output_string = StringIO()
     external_links = []
+    coordinates_and_info = []
 
     with open(file_path, "rb") as in_file:
         parser = PDFParser(in_file)
         doc = PDFDocument(parser)
         rsrcmgr = PDFResourceManager()
-        device = TextConverter(rsrcmgr, output_string, laparams=LAParams())
+        device = PDFPageAggregator(rsrcmgr, laparams=LAParams())
         interpreter = PDFPageInterpreter(rsrcmgr, device)
         for page in PDFPage.create_pages(doc):
             if page.annots:
@@ -41,32 +85,28 @@ def _convert_pdf_to_string_and_get_urls_from(file_path):
                     if link_data := annotation.resolve().get("A"):
                         if uri := link_data.get("URI"):
                             external_links.append(uri.decode("utf-8"))
+
             interpreter.process_page(page)
-    return (output_string.getvalue(), external_links)
-
-
-def _split_and_clean_string(resume_info):
-    return (
-        non_empty
-        for non_empty in (
-            " ".join(split_line.split()) for split_line in resume_info.splitlines()
-        )
-        if non_empty
-    )
+            layout = device.get_result()
+            for lobj in layout:
+                if isinstance(lobj, LTTextBox):
+                    x, y, text = lobj.bbox[0], lobj.bbox[3], lobj.get_text()
+                    coordinates_and_info.append((y, x, re.sub(r"\s+", " ", text)))
+    coordinates_and_info.sort(key=lambda tup: tup[0], reverse=True)  # sorts by y
+    return ([elem[2] for elem in coordinates_and_info], external_links)
 
 
 def _tokenize(sentences):
     nlp = spacy.load("en_core_web_sm")
     phone_checked = False
+    metrics_on = False
+
     for sentence in sentences:
-        doc = nlp(sentence)
+
         if not phone_checked:
             phone_checked = _is_phone(sentence)
 
-        """
-        for ent in doc.ents:
-            print(f"{ent.text} {ent.start_char} {ent.end_char} {ent.label}")
-        """
+        doc = nlp(sentence)
 
         pronouns = []
         for word_information in doc:
@@ -74,7 +114,15 @@ def _tokenize(sentences):
             if pronoun := _is_pronoun(word_information.pos_, word):
                 pronouns.append(pronoun)
 
-        print(pronouns)
+        metrics_status, principal_section = _is_section(sentence)
+
+        if principal_section:
+            metrics_on = metrics_status
+
+        if metrics_on and not principal_section:
+            for ent in doc.ents:
+                if _has_metrics(ent.label_):
+                    print(f"Labeled:{ent.text} || {ent.label_}")
 
 
 def _is_phone(string):
@@ -91,10 +139,33 @@ def _is_phone(string):
 def _is_pronoun(class_word, word):
     return (
         word
-        if class_word == TypeWords.PRONOUN.value
-        and word.lower() != IgnoredPronoun.IT.value
+        if any(t_word.name == class_word for t_word in TypeWords)
+        and not any(i_pro.name == word.lower() for i_pro in IgnoredPronouns)
         else None
     )
+
+
+def _is_section(sentence):
+    # The sections in most of the resumes have at most 3 words
+    if len(possible_section := sentence.split()) < 4:
+        str_section = " ".join(possible_section)
+        if any(
+            section in str_section.lower()
+            for category in MetricSectionsStem
+            for section in category.value
+        ):
+            return (True, True)
+        elif any(
+            section in str_section.lower()
+            for category in IgnoredMetricSectionsStem
+            for section in category.value
+        ):
+            return (False, True)
+    return (False, False)
+
+
+def _has_metrics(label):
+    return any(m_label.name == label for m_label in Metrics)
 
 
 def fib(n: int) -> int:
