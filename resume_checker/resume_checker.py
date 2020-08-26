@@ -12,9 +12,9 @@ from pdfminer.pdfparser import PDFParser
 
 
 class VerbTags(Enum):
-    VBD = auto()  # Past
-    VB = auto()  # Base
-    VBG = auto()  # verb, gerund or present participle
+    VB = "base"  # Base
+    VBD = "past"  # Past
+    VBG = "gerund"  # verb, gerund or present participle
 
 
 class IgnoredPronouns(Enum):
@@ -115,6 +115,8 @@ def _tokenize(sentences):
     dates_by_section = []
     temp_dates = []
 
+    all_tenses = {VerbTags.VB: {}, VerbTags.VBD: {}, VerbTags.VBG: {}}
+
     for sentence in sentences:
         pronouns = []
         past_verbs = []
@@ -151,15 +153,25 @@ def _tokenize(sentences):
                     print(sentence)
                     print("Try to use bullet words as yor first word")
 
-                past_verbs.append(bullet) if bullet else None
-                participle_verb.append(bullet) if impact else None
-                present_verbs.append(bullet) if present_verb else None
+                past_verbs.append(token.text) if bullet else None
+                participle_verb.append(token.text) if impact else None
+                present_verbs.append(token.text) if present_verb else None
 
             for ent in doc.ents:
                 if date := _if_is_date_give_me_the_date(ent.label_, ent.text):
                     temp_dates.append(date)
 
-    print(f"sorted? {_is_sorted(dates_by_section)}")
+        _words_to_dict(
+            [
+                (VerbTags.VB, present_verbs),
+                (VerbTags.VBD, past_verbs),
+                (VerbTags.VBG, participle_verb),
+            ],
+            all_tenses,
+        )
+
+    print(f"{all_tenses}")
+    print(f"{_is_sorted(dates_by_section)}")
 
 
 def _is_phone(string):
@@ -231,6 +243,17 @@ def _is_sorted(all_dates):
         l1, l2 = tee(date)
         next(l2, None)
         print(all(a >= b for a, b in zip(l1, l2)))
+
+
+def _words_to_dict(list_of_type_words, all_tenses):
+    for type_words in list_of_type_words:
+        word_type, list_words = type_words
+        for word in list_words:
+            category = all_tenses.get(word_type)
+            if inserted_word := category.get(word):
+                category[word] = inserted_word + 1
+            else:
+                category[word] = 1
 
 
 def fib(n: int) -> int:
