@@ -2,6 +2,7 @@ import re
 from enum import Enum, auto
 from itertools import tee
 
+import requests
 import spacy
 from pdfminer.converter import PDFPageAggregator
 from pdfminer.layout import LAParams, LTTextBox
@@ -77,7 +78,8 @@ class StemSectionsIgnoredMetric(Enum):
 def create_report_of(filepath):
 
     _sorted_resume, links = _convert_pdf_to_string_and_get_urls_from(filepath)
-    _tokenize(_sorted_resume)
+    # _tokenize(_sorted_resume)
+    _url_checker(links)
 
 
 def _convert_pdf_to_string_and_get_urls_from(file_path):
@@ -171,7 +173,7 @@ def _tokenize(sentences):
         )
 
     print(f"{all_tenses}")
-    print(f"{_is_sorted(dates_by_section)}")
+    _is_sorted(dates_by_section)
 
 
 def _is_phone(string):
@@ -254,6 +256,16 @@ def _words_to_dict(list_of_type_words, all_tenses):
                 category[word] = inserted_word + 1
             else:
                 category[word] = 1
+
+
+def _url_checker(urls):
+    if not urls:
+        print("No urls? Try to put some")
+    for url in urls:
+        if "mailto" not in url:
+            r = requests.head(url)
+            if r.status_code == 404 or r.status_code == 503:
+                print(f"Dead: {url}=>{r.status_code}")
 
 
 def fib(n: int) -> int:
