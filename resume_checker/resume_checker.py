@@ -1,5 +1,6 @@
 import re
 from enum import Enum, auto
+from itertools import tee
 
 import spacy
 from pdfminer.converter import PDFPageAggregator
@@ -10,22 +11,32 @@ from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
 
+class VerbTags(Enum):
+    VBD = auto()  # Past
+    VB = auto()  # Base
+    VBG = auto()  # verb, gerund or present participle
+
+
 class IgnoredPronouns(Enum):
     IT = auto()
 
 
-class TypeWords(Enum):
+class UnivPosPronouns(Enum):
     PRON = auto()
 
 
-class Metrics(Enum):
+class NamedEntitiesMetric(Enum):
     PERCENT = auto()
     MONEY = auto()
     ORDINAL = auto()
     CARDINAL = auto()
 
 
-class MetricSectionsStem(Enum):
+class NamedEntityDate(Enum):
+    DATE = auto()
+
+
+class StemSectionsMetric(Enum):
     WORK = {
         "work",
         "experi",
@@ -41,7 +52,7 @@ class MetricSectionsStem(Enum):
     }
 
 
-class IgnoredMetricSectionsStem(Enum):
+class StemSectionsIgnoredMetric(Enum):
     EDUCATION = {
         "educ",
         "cours",
@@ -101,14 +112,20 @@ def _tokenize(sentences):
     phone_checked = False
     metrics_on = False
 
+    dates_by_section = []
+    temp_dates = []
+
     for sentence in sentences:
+        pronouns = []
+        past_verbs = []
+        participle_verb = []
+        present_verbs = []
 
         if not phone_checked:
             phone_checked = _is_phone(sentence)
 
         doc = nlp(sentence)
 
-        pronouns = []
         for word_information in doc:
             word = word_information.text
             if pronoun := _is_pronoun(word_information.pos_, word):
@@ -117,12 +134,32 @@ def _tokenize(sentences):
         metrics_status, principal_section = _is_section(sentence)
 
         if principal_section:
+            if temp_dates:
+                dates_by_section.append(temp_dates)
+                temp_dates = []
             metrics_on = metrics_status
 
         if metrics_on and not principal_section:
+            for token in doc:
+                possible_bullet_or_verb = token.tag_
+
+                bullet = _is_bullet_word(possible_bullet_or_verb)
+                impact = _is_impact_word(possible_bullet_or_verb)
+                present_verb = _is_verb(possible_bullet_or_verb)
+
+                if present_verb and not past_verbs:
+                    print(sentence)
+                    print("Try to use bullet words as yor first word")
+
+                past_verbs.append(bullet) if bullet else None
+                participle_verb.append(bullet) if impact else None
+                present_verbs.append(bullet) if present_verb else None
+
             for ent in doc.ents:
-                if _has_metrics(ent.label_):
-                    print(f"Labeled:{ent.text} || {ent.label_}")
+                if date := _if_is_date_give_me_the_date(ent.label_, ent.text):
+                    temp_dates.append(date)
+
+    print(f"sorted? {_is_sorted(dates_by_section)}")
 
 
 def _is_phone(string):
@@ -139,25 +176,25 @@ def _is_phone(string):
 def _is_pronoun(class_word, word):
     return (
         word
-        if any(t_word.name == class_word for t_word in TypeWords)
+        if any(t_word.name == class_word for t_word in UnivPosPronouns)
         and not any(i_pro.name == word.lower() for i_pro in IgnoredPronouns)
         else None
     )
 
 
 def _is_section(sentence):
-    # The sections in most of the resumes have at most 3 words
+    # Sections in general have at most 3 words
     if len(possible_section := sentence.split()) < 4:
         str_section = " ".join(possible_section)
         if any(
             section in str_section.lower()
-            for category in MetricSectionsStem
+            for category in StemSectionsMetric
             for section in category.value
         ):
             return (True, True)
         elif any(
             section in str_section.lower()
-            for category in IgnoredMetricSectionsStem
+            for category in StemSectionsIgnoredMetric
             for section in category.value
         ):
             return (False, True)
@@ -165,7 +202,35 @@ def _is_section(sentence):
 
 
 def _has_metrics(label):
-    return any(m_label.name == label for m_label in Metrics)
+    return any(m_label.name == label for m_label in NamedEntitiesMetric)
+
+
+def _is_bullet_word(tag):
+    return tag == VerbTags.VBD.name
+
+
+def _is_impact_word(tag):
+    return tag == VerbTags.VBG.name
+
+
+def _is_verb(tag):
+    return tag == VerbTags.VB.name
+
+
+def _if_is_date_give_me_the_date(tag, text):
+    if tag == NamedEntityDate.DATE.name:
+        for word in text.split():
+            if len(only_first_number := re.sub(r"\D", "", word)) > 2:
+                return only_first_number
+    return None
+
+
+def _is_sorted(all_dates):
+    for date in all_dates:
+        print(f"{date}")
+        l1, l2 = tee(date)
+        next(l2, None)
+        print(all(a >= b for a, b in zip(l1, l2)))
 
 
 def fib(n: int) -> int:
