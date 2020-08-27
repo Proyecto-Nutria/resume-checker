@@ -1,6 +1,7 @@
 import re
 from enum import Enum, auto
 from itertools import tee
+from pprint import pprint
 
 import requests
 import spacy
@@ -10,6 +11,37 @@ from pdfminer.pdfdocument import PDFDocument
 from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
+
+# Create a sentence with all the properties
+
+
+class Report:
+    # __slots__ = ('', 'node2', 'weight')
+    def __init__(
+        self,
+        correct_phone_number,
+        sentences_information,
+        verb_counter,
+        dates,
+        any_urls,
+        broken_urls,
+    ):
+        self.correct_phone_number = correct_phone_number
+        self.sentences_information = sentences_information
+        self.verb_counter = verb_counter
+        self.dates = dates
+        self.any_urls = any_urls
+        self.broken_urls = broken_urls
+
+
+class SentenceInformation:
+    def __init__(self):
+        self.sentence = ""
+        self.principal_section = False
+        self.in_principal_section = False
+        self.any_metrics = False
+        self.pronouns = []
+        self.bullet_word_at_the_beginning = False
 
 
 class VerbTags(Enum):
@@ -78,8 +110,20 @@ class StemSectionsIgnoredMetric(Enum):
 def create_report_of(filepath):
 
     _sorted_resume, links = _convert_pdf_to_string_and_get_urls_from(filepath)
-    # _tokenize(_sorted_resume)
-    _url_checker(links)
+    (phone_checked, all_sentences, all_tenses_counter, dates_by_section) = _tokenize(
+        _sorted_resume
+    )
+    broken_urls = _url_checker(links)
+    report = Report(
+        phone_checked,
+        all_sentences,
+        all_tenses_counter,
+        dates_by_section,
+        links is not None,
+        broken_urls,
+    )
+
+    pprint(vars(report))
 
 
 def _convert_pdf_to_string_and_get_urls_from(file_path):
@@ -117,23 +161,23 @@ def _tokenize(sentences):
     dates_by_section = []
     temp_dates = []
 
-    all_tenses = {VerbTags.VB: {}, VerbTags.VBD: {}, VerbTags.VBG: {}}
+    all_tenses_counter = {VerbTags.VB: {}, VerbTags.VBD: {}, VerbTags.VBG: {}}
+    all_sentences = []
 
     for sentence in sentences:
         pronouns = []
-        past_verbs = []
-        participle_verb = []
-        present_verbs = []
+        sentence_information = SentenceInformation()
 
         if not phone_checked:
             phone_checked = _is_phone(sentence)
 
         doc = nlp(sentence)
+        sentence_information.sentence = sentence
 
         for word_information in doc:
-            word = word_information.text
-            if pronoun := _is_pronoun(word_information.pos_, word):
+            if pronoun := _is_pronoun(word_information.pos_, word_information.text):
                 pronouns.append(pronoun)
+        sentence_information.pronouns = pronouns
 
         metrics_status, principal_section = _is_section(sentence)
 
@@ -142,8 +186,13 @@ def _tokenize(sentences):
                 dates_by_section.append(temp_dates)
                 temp_dates = []
             metrics_on = metrics_status
+        sentence_information.principal_section = principal_section
 
         if metrics_on and not principal_section:
+            past_verbs = []
+            participle_verb = []
+            present_verbs = []
+            check_bullet_word = True
             for token in doc:
                 possible_bullet_or_verb = token.tag_
 
@@ -151,29 +200,39 @@ def _tokenize(sentences):
                 impact = _is_impact_word(possible_bullet_or_verb)
                 present_verb = _is_verb(possible_bullet_or_verb)
 
-                if present_verb and not past_verbs:
-                    print(sentence)
-                    print("Try to use bullet words as yor first word")
+                if check_bullet_word:
+                    if present_verb and past_verbs or past_verbs and not present_verbs:
+                        sentence_information.bullet_word_at_the_beginning = True
+                        check_bullet_word = False
+                    elif present_verb and not past_verbs:
+                        check_bullet_word = False
 
                 past_verbs.append(token.text) if bullet else None
                 participle_verb.append(token.text) if impact else None
                 present_verbs.append(token.text) if present_verb else None
 
+            _words_to_dict(
+                [
+                    (VerbTags.VB, present_verbs),
+                    (VerbTags.VBD, past_verbs),
+                    (VerbTags.VBG, participle_verb),
+                ],
+                all_tenses_counter,
+            )
+
             for ent in doc.ents:
                 if date := _if_is_date_give_me_the_date(ent.label_, ent.text):
                     temp_dates.append(date)
 
-        _words_to_dict(
-            [
-                (VerbTags.VB, present_verbs),
-                (VerbTags.VBD, past_verbs),
-                (VerbTags.VBG, participle_verb),
-            ],
-            all_tenses,
-        )
+                if _has_metrics(ent.label_):
+                    sentence_information.any_metrics = True
 
-    print(f"{all_tenses}")
-    _is_sorted(dates_by_section)
+        sentence_information.in_principal_section = metrics_on
+
+        all_sentences.append(sentence_information)
+        # pprint(vars(sentence_information))
+    # _is_sorted(dates_by_section)
+    return (phone_checked, all_sentences, all_tenses_counter, dates_by_section)
 
 
 def _is_phone(string):
@@ -247,11 +306,11 @@ def _is_sorted(all_dates):
         print(all(a >= b for a, b in zip(l1, l2)))
 
 
-def _words_to_dict(list_of_type_words, all_tenses):
+def _words_to_dict(list_of_type_words, all_tenses_counter):
     for type_words in list_of_type_words:
         word_type, list_words = type_words
         for word in list_words:
-            category = all_tenses.get(word_type)
+            category = all_tenses_counter.get(word_type)
             if inserted_word := category.get(word):
                 category[word] = inserted_word + 1
             else:
@@ -259,13 +318,14 @@ def _words_to_dict(list_of_type_words, all_tenses):
 
 
 def _url_checker(urls):
-    if not urls:
-        print("No urls? Try to put some")
-    for url in urls:
+    broken_urls = []
+    for index, url in enumerate(urls):
         if "mailto" not in url:
+            print(f"Checking {index} of {len(urls)} urls")
             r = requests.head(url)
             if r.status_code == 404 or r.status_code == 503:
-                print(f"Dead: {url}=>{r.status_code}")
+                broken_urls.append(url)
+    return broken_urls
 
 
 def fib(n: int) -> int:
