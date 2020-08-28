@@ -1,3 +1,5 @@
+# This package was created with: https://github.com/sourcery-ai/python-best-practices-cookiecutter
+
 from resume_checker.analysis import _tokenize
 from resume_checker.network import _url_checker
 from resume_checker.output import Report
