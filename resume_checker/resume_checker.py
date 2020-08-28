@@ -1,6 +1,7 @@
 import re
 from enum import Enum, auto
 from itertools import tee
+from typing import Any, Dict, List, Tuple
 
 import requests
 import spacy
@@ -242,20 +243,24 @@ def _convert_pdf_to_string_and_get_urls_from(file_path):
     return ([elem[2] for elem in coordinates_and_info], external_links)
 
 
-def _tokenize(sentences):
+def _tokenize(sentences: List[str]) -> Any:
     nlp = spacy.load("en_core_web_sm")
     phone_checked = False
     metrics_on = False
 
-    dates_by_section = []
-    temp_dates = []
+    dates_by_section: List[List[str]] = []
+    temp_dates: List[str] = []
 
-    all_tenses_counter = {VerbTags.VB: {}, VerbTags.VBD: {}, VerbTags.VBG: {}}
-    all_sentences = []
+    all_tenses_counter: Dict[VerbTags, Dict[str, int]] = {
+        VerbTags.VB: {},
+        VerbTags.VBD: {},
+        VerbTags.VBG: {},
+    }
+    all_sentences: List[SentenceInformation] = []
     correct_number = False
 
     for sentence in sentences:
-        pronouns = []
+        pronouns: List[str] = []
         sentence_information = SentenceInformation()
 
         if not phone_checked:
@@ -279,9 +284,9 @@ def _tokenize(sentences):
         sentence_information.principal_section = principal_section
 
         if metrics_on and not principal_section:
-            past_verbs = []
-            participle_verb = []
-            present_verbs = []
+            past_verbs: List[str] = []
+            participle_verb: List[str] = []
+            present_verbs: List[str] = []
             check_bullet_word = True
             for token in doc:
                 possible_bullet_or_verb = token.tag_
@@ -323,7 +328,7 @@ def _tokenize(sentences):
     return (correct_number, all_sentences, all_tenses_counter, dates_by_section)
 
 
-def _is_phone(string):
+def _is_phone(string: str) -> Tuple[bool, bool]:
     phone_number = "".join([number for number in string if number.isdigit()])
     if not phone_number:
         return (False, False)
@@ -333,16 +338,16 @@ def _is_phone(string):
         return (True, True)
 
 
-def _is_pronoun(class_word, word):
+def _is_pronoun(class_word: str, word: str) -> str:
     return (
         word
         if any(t_word.name == class_word for t_word in UnivPosPronouns)
         and not any(i_pro.name == word.upper() for i_pro in IgnoredPronouns)
-        else None
+        else ""
     )
 
 
-def _is_section(sentence):
+def _is_section(sentence: str) -> Tuple[bool, bool]:
     # Sections in general have at most 3 words
     if len(possible_section := sentence.split()) < 4:
         str_section = " ".join(possible_section)
@@ -361,37 +366,39 @@ def _is_section(sentence):
     return (False, False)
 
 
-def _has_metrics(label):
+def _has_metrics(label: str) -> bool:
     return any(m_label.name == label for m_label in NamedEntitiesMetric)
 
 
-def _is_bullet_word(tag):
+def _is_bullet_word(tag: str) -> bool:
     return tag == VerbTags.VBD.name
 
 
-def _is_impact_word(tag):
+def _is_impact_word(tag: str) -> bool:
     return tag == VerbTags.VBG.name
 
 
-def _is_verb(tag):
+def _is_verb(tag: str) -> bool:
     return tag == VerbTags.VB.name
 
 
-def _if_is_date_give_me_the_date(tag, text):
+def _if_is_date_give_me_the_date(tag: str, text: str) -> str:
     if tag == NamedEntityDate.DATE.name:
         for word in text.split():
             if len(only_first_number := re.sub(r"\D", "", word)) > 2:
                 return only_first_number
-    return None
+    return ""
 
 
-def _is_sorted(date):
+def _is_sorted(date: List[int]) -> bool:
     l1, l2 = tee(date)
     next(l2, None)
     return all(a >= b for a, b in zip(l1, l2))
 
 
-def _words_to_dict(list_of_type_words, all_tenses_counter):
+def _words_to_dict(
+    list_of_type_words: List[Tuple[VerbTags, List[str]]], all_tenses_counter,
+) -> None:
     for type_words in list_of_type_words:
         word_type, list_words = type_words
         for word in list_words:
@@ -402,7 +409,7 @@ def _words_to_dict(list_of_type_words, all_tenses_counter):
                 category[word] = 1
 
 
-def _url_checker(urls):
+def _url_checker(urls: List[str]) -> List[str]:
     broken_urls = []
     for index, url in enumerate(urls):
         if "mailto" not in url:
