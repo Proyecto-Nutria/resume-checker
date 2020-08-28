@@ -128,3 +128,10 @@ dmypy.json
 .pyre/
 
 # End of https://www.gitignore.io/api/python
+
+# Confidential Information
+*.pdf
+!test/test_pdf/*
+
+# Vs code configuration
+.vscode/
