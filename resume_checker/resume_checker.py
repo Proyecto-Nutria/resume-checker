@@ -12,7 +12,7 @@ def create_report_of(filepath):
     (phone_checked, all_sentences, all_tenses_counter, dates_by_section) = _tokenize(
         _sorted_resume
     )
-    broken_urls = _url_checker([])  # links
+    broken_urls = _url_checker(links)
     report = Report(
         phone_checked,
         all_sentences,
