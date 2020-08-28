@@ -1,4 +1,5 @@
 # Resume Checker
+![Tests]https://github.com/Proyecto-Nutria/resume-checker/workflows/Test/badge.svg
 
 Tool that analyze technical resumes and generates human readable feedback.
 
