@@ -21,7 +21,6 @@ def print_new_line_at_end(function_to_decorate):
 
 
 class Report:
-    # __slots__ = ('', 'node2', 'weight')
     def __init__(
         self,
         correct_phone_number,
@@ -115,6 +114,15 @@ class Report:
 
 
 class SentenceInformation:
+    __slots__ = (
+        "sentence",
+        "principal_section",
+        "in_principal_section",
+        "any_metrics",
+        "pronouns",
+        "bullet_word_at_the_beginning",
+    )
+
     def __init__(self):
         self.sentence = ""
         self.principal_section = False
