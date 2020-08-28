@@ -1,7 +1,6 @@
 import re
 from enum import Enum, auto
 from itertools import tee
-from pprint import pprint
 
 import requests
 import spacy
@@ -12,7 +11,13 @@ from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfparser import PDFParser
 
-# Create a sentence with all the properties
+
+def print_new_line_at_end(function_to_decorate):
+    def wrapper(*args, **kw):
+        function_to_decorate(*args, **kw)
+        print()
+
+    return wrapper
 
 
 class Report:
@@ -32,6 +37,81 @@ class Report:
         self.dates = dates
         self.any_urls = any_urls
         self.broken_urls = broken_urls
+
+    def display_report(self):
+        self._report_phone_number()
+        self._report_metrics_and_bullet_per_sentence()
+        self._report_sorted_dates()
+        self._report_number_of_words()
+        self._report_broken_links()
+
+    @print_new_line_at_end
+    def _report_phone_number(self):
+        if not self.correct_phone_number:
+            print("The phone number doesn't have the 52 country code")
+        else:
+            print("The phone number is in the correct format")
+
+    @print_new_line_at_end
+    def _report_metrics_and_bullet_per_sentence(self):
+        for sentence_info in self.sentences_information:
+            mistakes_in_sentence = []
+            if (
+                sentence_info.in_principal_section
+                and not sentence_info.in_principal_section
+            ):
+                if not sentence_info.any_metrics:
+                    mistakes_in_sentence.append(
+                        "You don't have any metrics"
+                        + "try to put some numbers and how impacted your work"
+                    )
+                if not sentence_info.bullet_word_at_the_beginning:
+                    mistakes_in_sentence.append(
+                        "You should start the sentence with a bullet word"
+                    )
+            if sentence_info.pronouns:
+                mistakes_in_sentence.append(
+                    "Try to not use any pronouns, we found this one: "
+                    + " ".join(sentence_info.pronouns)
+                )
+            if mistakes_in_sentence:
+                print(
+                    f"The sentence: {sentence_info.sentence} has the following problems: "
+                )
+                print(*mistakes_in_sentence, sep="\n")
+
+    @print_new_line_at_end
+    def _report_sorted_dates(self):
+        for date in self.dates:
+            if not _is_sorted(date):
+                print(
+                    f"Some of your projects are not sorted, their initial dates are: {' '.join(date)}"
+                )
+
+    @print_new_line_at_end
+    def _report_number_of_words(self):
+        for _, category_counter in self.verb_counter.items():
+            number_of_occurrences = [
+                occurrences for _, occurrences in category_counter.items()
+            ]
+            average = sum(number_of_occurrences) / len(number_of_occurrences)
+            verbs_above_average = [
+                verb
+                for verb, occurrences in category_counter.items()
+                if occurrences > average
+            ]
+            if verbs_above_average:
+                print(f"You are repeating too much: {' '.join(verbs_above_average)}.")
+
+    @print_new_line_at_end
+    def _report_broken_links(self):
+        if self.broken_urls:
+            print("We found some broken links:")
+            print(*self.broken_urls, sep="\n")
+        elif not self.any_urls:
+            print("We didn't find any link, try to use them to link your projects/work")
+        else:
+            print("All your links all working propertly")
 
 
 class SentenceInformation:
@@ -113,7 +193,9 @@ def create_report_of(filepath):
     (phone_checked, all_sentences, all_tenses_counter, dates_by_section) = _tokenize(
         _sorted_resume
     )
-    broken_urls = _url_checker(links)
+    # broken_urls = _url_checker(links)
+    broken_urls = []
+
     report = Report(
         phone_checked,
         all_sentences,
@@ -122,8 +204,7 @@ def create_report_of(filepath):
         links is not None,
         broken_urls,
     )
-
-    pprint(vars(report))
+    report.display_report()
 
 
 def _convert_pdf_to_string_and_get_urls_from(file_path):
@@ -163,13 +244,14 @@ def _tokenize(sentences):
 
     all_tenses_counter = {VerbTags.VB: {}, VerbTags.VBD: {}, VerbTags.VBG: {}}
     all_sentences = []
+    correct_number = False
 
     for sentence in sentences:
         pronouns = []
         sentence_information = SentenceInformation()
 
         if not phone_checked:
-            phone_checked = _is_phone(sentence)
+            phone_checked, correct_number = _is_phone(sentence)
 
         doc = nlp(sentence)
         sentence_information.sentence = sentence
@@ -230,27 +312,24 @@ def _tokenize(sentences):
         sentence_information.in_principal_section = metrics_on
 
         all_sentences.append(sentence_information)
-        # pprint(vars(sentence_information))
-    # _is_sorted(dates_by_section)
-    return (phone_checked, all_sentences, all_tenses_counter, dates_by_section)
+    return (correct_number, all_sentences, all_tenses_counter, dates_by_section)
 
 
 def _is_phone(string):
     phone_number = "".join([number for number in string if number.isdigit()])
     if not phone_number:
-        return False
+        return (False, False)
     if "52" not in phone_number[:-10]:
-        print("Wrong Number")
+        return (True, False)
     else:
-        print("Correct Number")
-    return True
+        return (True, True)
 
 
 def _is_pronoun(class_word, word):
     return (
         word
         if any(t_word.name == class_word for t_word in UnivPosPronouns)
-        and not any(i_pro.name == word.lower() for i_pro in IgnoredPronouns)
+        and not any(i_pro.name == word.upper() for i_pro in IgnoredPronouns)
         else None
     )
 
@@ -298,12 +377,10 @@ def _if_is_date_give_me_the_date(tag, text):
     return None
 
 
-def _is_sorted(all_dates):
-    for date in all_dates:
-        print(f"{date}")
-        l1, l2 = tee(date)
-        next(l2, None)
-        print(all(a >= b for a, b in zip(l1, l2)))
+def _is_sorted(date):
+    l1, l2 = tee(date)
+    next(l2, None)
+    return all(a >= b for a, b in zip(l1, l2))
 
 
 def _words_to_dict(list_of_type_words, all_tenses_counter):
@@ -321,7 +398,7 @@ def _url_checker(urls):
     broken_urls = []
     for index, url in enumerate(urls):
         if "mailto" not in url:
-            print(f"Checking {index} of {len(urls)} urls")
+            print(f"Checking {index} of {len(urls)} urls", end="\r", flush=True)
             r = requests.head(url)
             if r.status_code == 404 or r.status_code == 503:
                 broken_urls.append(url)
