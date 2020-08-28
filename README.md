@@ -24,9 +24,7 @@ pipenv run python -m spacy download en_core_web_sm
 
 ### Usage
 
-You need to put the path of the resume that you want to analyze in `main.py` and run:
-
 ```sh
-# Run the main script
-pipenv run python main.py
+# Run the main script to analyze the resume
+pipenv run python -m resume_checker "resume.pdf"
 ```
