@@ -87,14 +87,17 @@ class Report:
             number_of_occurrences = [
                 occurrences for _, occurrences in category_counter.items()
             ]
-            average = sum(number_of_occurrences) / len(number_of_occurrences)
-            verbs_above_average = [
-                verb
-                for verb, occurrences in category_counter.items()
-                if occurrences > average
-            ]
-            if verbs_above_average:
-                print(f"You are repeating too much: {' '.join(verbs_above_average)}.")
+            if number_of_occurrences:
+                average = sum(number_of_occurrences) / len(number_of_occurrences)
+                verbs_above_average = [
+                    verb
+                    for verb, occurrences in category_counter.items()
+                    if occurrences > average
+                ]
+                if verbs_above_average:
+                    print(
+                        f"You are repeating too much: {' '.join(verbs_above_average)}."
+                    )
 
     @print_new_line_at_end
     def _report_broken_links(self):
